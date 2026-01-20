@@ -153,8 +153,9 @@ restore() {
 # Remove entire repository (and all its skills)
 remove_repo() {
     local repo_name=$1
+    local mode=${2:-hard}  # Default to hard removal
 
-    echo "Removing repository: $repo_name"
+    echo "Removing repository: $repo_name (mode: $mode)"
 
     # Remove all skills from this repo
     if [ -f "$CONFIG" ]; then
@@ -170,12 +171,18 @@ remove_repo() {
         fi
     done
 
-    # Remove the submodule
-    git submodule deinit -f "skills-repos/$repo_name"
-    git rm -f "skills-repos/$repo_name"
-    rm -rf ".git/modules/skills-repos/$repo_name"
-
-    echo "✗ Removed repository: $repo_name"
+    if [ "$mode" = "hard" ]; then
+        # Hard removal: delete submodule completely
+        git submodule deinit -f "skills-repos/$repo_name"
+        git rm -f "skills-repos/$repo_name"
+        rm -rf ".git/modules/skills-repos/$repo_name"
+        echo "✗ Hard removed repository: $repo_name"
+    else
+        # Soft removal: keep files but unregister submodule
+        git submodule deinit -f "skills-repos/$repo_name"
+        git rm --cached "skills-repos/$repo_name"  # Remove from index but keep files
+        echo "✗ Soft removed repository: $repo_name (files preserved)"
+    fi
 }
 
 # Main command dispatcher
@@ -184,7 +191,17 @@ case "${1:-}" in
         add_sparse_submodule "$2" "$3" "${4:-}" "${5:-}"
         ;;
     remove-repo)
-        remove_repo "$2"
+        case "${2:-}" in
+            --soft)
+                remove_repo "$3" "soft"
+                ;;
+            --hard)
+                remove_repo "$3" "hard"
+                ;;
+            *)
+                remove_repo "$2" "hard"
+                ;;
+        esac
         ;;
     add)
         add_skill "$2" "$3" "${4:-}"
@@ -204,7 +221,7 @@ Usage: skillsync <command> [args]
 
 Commands:
   add-repo <url> <name> [initial_paths] [branch]   Add sparse submodule
-  remove-repo <name>                       Remove entire repository and its skills
+  remove-repo [--soft|--hard] <name>       Remove repository (--soft preserves files)
   add <source> <path> [id]                 Activate skill
   remove <id>                              Deactivate skill
   list                                     List active skills
@@ -213,7 +230,9 @@ Commands:
 Examples:
   skillsync add-repo https://github.com/base-org/skills base "skills/postgres-patterns/*"
   skillsync add-repo https://github.com/vercel-labs/agent-skills vercel "skills/" install
-  skillsync remove-repo vercel
+  skillsync remove-repo vercel                    # Hard removal (default)
+  skillsync remove-repo --soft vercel            # Soft removal (keeps files)
+  skillsync remove-repo --hard vercel            # Hard removal (explicit)
   skillsync add base saas-multitenancy
   skillsync add user custom-stripe
   skillsync list
