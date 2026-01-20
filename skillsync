@@ -148,10 +148,41 @@ restore() {
     activate_skills "$skills"
 }
 
+# Remove entire repository (and all its skills)
+remove_repo() {
+    local repo_name=$1
+
+    echo "Removing repository: $repo_name"
+
+    # Remove all skills from this repo
+    if [ -f "$CONFIG" ]; then
+        local updated=$(jq --arg repo "$repo_name" 'map(select(.source != $repo))' "$CONFIG")
+        echo "$updated" | jq '.' > "$CONFIG"
+    fi
+
+    # Remove symlinks for this repo's skills
+    find "$SKILLS_ACTIVE" -type l | while read -r link; do
+        local target=$(readlink "$link")
+        if [[ "$target" == *"../skills-repos/$repo_name"* ]]; then
+            rm -f "$link"
+        fi
+    done
+
+    # Remove the submodule
+    git submodule deinit -f "skills-repos/$repo_name"
+    git rm -f "skills-repos/$repo_name"
+    rm -rf ".git/modules/skills-repos/$repo_name"
+
+    echo "✗ Removed repository: $repo_name"
+}
+
 # Main command dispatcher
 case "${1:-}" in
     add-repo)
         add_sparse_submodule "$2" "$3" "${4:-}" "${5:-}"
+        ;;
+    remove-repo)
+        remove_repo "$2"
         ;;
     add)
         add_skill "$2" "$3" "${4:-}"
@@ -171,14 +202,16 @@ Usage: skillsync <command> [args]
 
 Commands:
   add-repo <url> <name> [initial_paths] [branch]   Add sparse submodule
-  add <source> <path> [id]                Activate skill
-  remove <id>                             Deactivate skill
-  list                                    List active skills
-  restore                                 Restore symlinks from config
+  remove-repo <name>                       Remove entire repository and its skills
+  add <source> <path> [id]                 Activate skill
+  remove <id>                              Deactivate skill
+  list                                     List active skills
+  restore                                  Restore symlinks from config
 
 Examples:
   skillsync add-repo https://github.com/base-org/skills base "skills/postgres-patterns/*"
   skillsync add-repo https://github.com/vercel-labs/agent-skills vercel "skills/" install
+  skillsync remove-repo vercel
   skillsync add base saas-multitenancy
   skillsync add user custom-stripe
   skillsync list
