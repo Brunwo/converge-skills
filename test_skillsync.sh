@@ -231,7 +231,46 @@ test_cleanup_with_skillsync() {
         echo_failure ".gitmodules should not contain vercel references after removal"
     fi
 
-    echo_success "Cleanup using skillsync commands successful"
+    echo_success "Soft removal cleanup successful"
+}
+
+# Test repository re-adding after soft removal (no manual rm needed)
+test_readd_after_soft_removal() {
+    echo_info "Testing repository re-adding after soft removal (no manual rm)"
+
+    # First clean up any existing repository
+    ./skillsync remove-repo --soft vercel 2>/dev/null || true
+
+    # Verify no vercel repository exists in git
+    if git ls-files --stage | grep -q vercel; then
+        echo_failure "Vercel repository should not exist in git index"
+    fi
+
+    # Try to re-add the repository (should work without manual rm commands)
+    ./skillsync add-repo https://github.com/vercel-labs/agent-skills vercel "skills/react-best-practices/" 772252060741749696ce2abcb060c9efed6a5737
+
+    # Verify repository was re-added successfully
+    if [ ! -d "skills-repos/vercel" ]; then
+        echo_failure "Repository should be re-added successfully"
+    fi
+
+    # Verify it's a git repository
+    if [ ! -d "skills-repos/vercel/.git" ]; then
+        echo_failure "Re-added repository should be a valid git repo"
+    fi
+
+    # Check that react-best-practices skill is checked out
+    if [ ! -d "skills-repos/vercel/skills/react-best-practices" ]; then
+        echo_failure "react-best-practices skill should be checked out"
+    fi
+
+    # Verify commit is correct
+    local current_commit=$(cd "skills-repos/vercel" && git rev-parse HEAD)
+    if [ "$current_commit" != "772252060741749696ce2abcb060c9efed6a5737" ]; then
+        echo_failure "Repository should be at correct commit after re-adding"
+    fi
+
+    echo_success "Repository re-adding works without manual rm commands"
 }
 
 # Cleanup test environment
@@ -255,6 +294,7 @@ run_tests() {
     test_list_command
     test_only_vercel_repo
     test_cleanup_with_skillsync
+    test_readd_after_soft_removal
 
     echo_success "All tests passed! ✅"
 
