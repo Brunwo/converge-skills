@@ -23,7 +23,7 @@ add_sparse_submodule() {
     if [[ "$url" =~ github\.com[/:]([^/]+)/([^/.]+) ]]; then
         local user="${BASH_REMATCH[1]}"
         local repo="${BASH_REMATCH[2]}"
-        local default_name="$repo"
+        local default_name="${user}-${repo}"
     else
         # Fallback: use last part of URL
         local default_name=$(basename "$url" .git)
@@ -82,8 +82,52 @@ add_sparse_submodule() {
     find . -maxdepth 1 -name '.git' -prune -o -type f -print | grep -v '^\./\.git' | xargs -r rm -f
     find . -maxdepth 1 -name '.git' -prune -o -type d -print | grep -v '^\./\.git' | xargs -r rm -rf
 
+    # Determine sparse checkout patterns
+    local sparse_patterns=""
     if [ -n "$initial_paths" ]; then
-        git sparse-checkout set --skip-checks $initial_paths
+        # User specified specific patterns
+        sparse_patterns="$initial_paths"
+        git sparse-checkout set --skip-checks $sparse_patterns
+    else
+        # No patterns specified - add ALL skills from repository
+        echo "No patterns specified, adding all skills from repository..."
+
+        # First, do a minimal checkout to see repository structure
+        git sparse-checkout set --skip-checks "README.md" "skills/" "*/"
+        git checkout HEAD
+
+        # Detect repository structure and collect all skills
+        if [ -d "skills" ] && [ "$(find skills -maxdepth 1 -type d | wc -l)" -gt 1 ]; then
+            # Vercel-style: skills in subdirectory
+            echo "Detected Vercel-style repository structure (skills/ subdirectory)"
+            local skill_dirs=$(find skills -maxdepth 1 -type d -not -name skills | sed 's|^skills/|skills/|')
+            sparse_patterns=""
+            for dir in $skill_dirs; do
+                sparse_patterns="$sparse_patterns $dir/*"
+            done
+            sparse_patterns=$(echo "$sparse_patterns" | sed 's/^ *//')  # Remove leading space
+        else
+            # Cloudflare-style: skills in root or other structure
+            echo "Detected root-level or Cloudflare-style repository structure"
+            local skill_dirs=$(find . -maxdepth 1 -type d -not -name .git -not -name . -not -name skills | head -10)
+            sparse_patterns=""
+            for dir in $skill_dirs; do
+                local dirname=$(basename "$dir")
+                # Skip common non-skill directories
+                if [[ "$dirname" != ".git" ]] && [[ "$dirname" != "docs" ]] && [[ "$dirname" != "scripts" ]] && [[ "$dirname" != ".github" ]]; then
+                    sparse_patterns="$sparse_patterns $dirname"
+                fi
+            done
+            sparse_patterns=$(echo "$sparse_patterns" | sed 's/^ *//')  # Remove leading space
+        fi
+
+        if [ -n "$sparse_patterns" ]; then
+            echo "Adding all skills: $sparse_patterns"
+            git sparse-checkout set --skip-checks $sparse_patterns
+        else
+            echo "Warning: No skills found in repository"
+            sparse_patterns=""
+        fi
     fi
 
     # Checkout only sparse files and update index
@@ -94,7 +138,7 @@ add_sparse_submodule() {
 
     # Save to .gitmodules metadata
     git config -f .gitmodules "submodule.$SKILLS_REPOS/$name.sparse" "true"
-    git config -f .gitmodules "submodule.$SKILLS_REPOS/$name.sparse-checkout" "$initial_paths"
+    git config -f .gitmodules "submodule.$SKILLS_REPOS/$name.sparse-checkout" "$sparse_patterns"
 }
 
 # Activate skills (create symlinks)
@@ -296,7 +340,12 @@ remove_repo() {
 # Main command dispatcher
 case "${1:-}" in
     add-repo)
-        add_sparse_submodule "$2" "$3" "${4:-}" "${5:-}"
+        # Handle variable number of arguments for add-repo
+        arg2="${2:-}"
+        arg3="${3:-}"
+        arg4="${4:-}"
+        arg5="${5:-}"
+        add_sparse_submodule "$arg2" "$arg3" "$arg4" "$arg5"
         ;;
     remove-repo)
         case "${2:-}" in
@@ -347,7 +396,11 @@ Commands:
   restore                                  Restore symlinks from config
 
 Examples:
-  # Simplified: auto-extract repo name from URL
+  # Default: auto-extract repo name and add ALL skills from repository
+  skillsync add-repo https://github.com/vercel-labs/agent-skills
+  skillsync add-repo https://github.com/cloudflare/skills
+
+  # Specific skills: auto-extract repo name but specify patterns
   skillsync add-repo https://github.com/vercel-labs/agent-skills "skills/react-best-practices/"
   skillsync add-repo https://github.com/cloudflare/skills "agents-sdk/"
 
