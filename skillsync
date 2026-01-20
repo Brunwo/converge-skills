@@ -154,8 +154,35 @@ restore() {
 remove_repo() {
     local repo_name=$1
     local mode=${2:-hard}  # Default to hard removal
+    local force=${3:-false}  # Default to no force
 
     echo "Removing repository: $repo_name (mode: $mode)"
+
+    # For hard removal, check for uncommitted/unpushed changes
+    if [ "$mode" = "hard" ] && [ "$force" = "false" ]; then
+        if [ -d "skills-repos/$repo_name" ]; then
+            cd "skills-repos/$repo_name"
+
+            # Check for uncommitted changes
+            if ! git diff --quiet --exit-code || ! git diff --cached --quiet --exit-code; then
+                echo "❌ Error: Repository '$repo_name' has uncommitted changes."
+                echo "   Use --force --hard to skip this safety check and lose changes."
+                cd ../..
+                exit 1
+            fi
+
+            # Check for unpushed commits
+            local current_branch=$(git rev-parse --abbrev-ref HEAD)
+            if git log --oneline --not --remotes | grep -q .; then
+                echo "❌ Error: Repository '$repo_name' has local commits not pushed to remote."
+                echo "   Use --force --hard to skip this safety check and lose commits."
+                cd ../..
+                exit 1
+            fi
+
+            cd ../..
+        fi
+    fi
 
     # Remove all skills from this repo
     if [ -f "$CONFIG" ]; then
@@ -176,12 +203,22 @@ remove_repo() {
         git submodule deinit -f "skills-repos/$repo_name"
         git rm -f "skills-repos/$repo_name"
         rm -rf ".git/modules/skills-repos/$repo_name"
-        echo "✗ Hard removed repository: $repo_name"
+        if [ "$force" = "true" ]; then
+            echo "✗ Force hard removed repository: $repo_name (changes may be lost)"
+        else
+            echo "✗ Hard removed repository: $repo_name"
+        fi
     else
-        # Soft removal: keep files but unregister submodule
+        # Soft removal: unregister submodule and clean up directory
         git submodule deinit -f "skills-repos/$repo_name"
-        git rm --cached "skills-repos/$repo_name"  # Remove from index but keep files
-        echo "✗ Soft removed repository: $repo_name (files preserved)"
+        git rm --cached "skills-repos/$repo_name" 2>/dev/null || true  # Remove from index if it exists
+
+        # Clean up the directory (safe since files are preserved elsewhere if needed)
+        if [ -d "skills-repos/$repo_name" ]; then
+            rm -rf "skills-repos/$repo_name"
+        fi
+
+        echo "✗ Soft removed repository: $repo_name (submodule unregistered, directory cleaned)"
     fi
 }
 
@@ -193,13 +230,24 @@ case "${1:-}" in
     remove-repo)
         case "${2:-}" in
             --soft)
-                remove_repo "$3" "soft"
+                remove_repo "$3" "soft" "false"
+                ;;
+            --force)
+                case "${3:-}" in
+                    --hard)
+                        remove_repo "$4" "hard" "true"
+                        ;;
+                    *)
+                        echo "❌ Error: --force must be used with --hard"
+                        exit 1
+                        ;;
+                esac
                 ;;
             --hard)
-                remove_repo "$3" "hard"
+                remove_repo "$3" "hard" "false"
                 ;;
             *)
-                remove_repo "$2" "hard"
+                remove_repo "$2" "hard" "false"
                 ;;
         esac
         ;;
@@ -221,7 +269,7 @@ Usage: skillsync <command> [args]
 
 Commands:
   add-repo <url> <name> [initial_paths] [branch]   Add sparse submodule
-  remove-repo [--soft|--hard] <name>       Remove repository (--soft preserves files)
+  remove-repo [--soft|--hard] [--force] <name>    Remove repository (--soft preserves files)
   add <source> <path> [id]                 Activate skill
   remove <id>                              Deactivate skill
   list                                     List active skills
@@ -233,6 +281,7 @@ Examples:
   skillsync remove-repo vercel                    # Hard removal (default)
   skillsync remove-repo --soft vercel            # Soft removal (keeps files)
   skillsync remove-repo --hard vercel            # Hard removal (explicit)
+  skillsync remove-repo --force --hard vercel    # Force hard removal (skip safety checks)
   skillsync add base saas-multitenancy
   skillsync add user custom-stripe
   skillsync list
