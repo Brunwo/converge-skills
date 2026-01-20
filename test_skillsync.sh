@@ -217,12 +217,17 @@ test_cleanup_with_skillsync() {
         echo_failure "Symlink should be removed after skill deactivation"
     fi
 
-    # Remove the repository (soft removal to keep it clean)
+    # Remove the repository (soft removal to keep files but unregister)
     ./skillsync remove-repo --soft vercel
 
-    # Verify repository directory is cleaned up
-    if [ -d "skills-repos/vercel" ]; then
-        echo_failure "Repository directory should be removed after soft removal"
+    # Verify repository directory is preserved (soft removal keeps files)
+    if [ ! -d "skills-repos/vercel" ]; then
+        echo_failure "Repository directory should be preserved after soft removal"
+    fi
+
+    # Verify it's no longer a git submodule (but files remain)
+    if [ -d "skills-repos/vercel/.git" ]; then
+        echo_failure "Repository should no longer be a git submodule after soft removal"
     fi
 
     # Verify .gitmodules is clean
@@ -299,6 +304,73 @@ test_readd_after_soft_removal() {
     echo_success "Repository re-adding works without manual rm commands, workspace completely clean"
 }
 
+# Test commit ID sparse checkout works without manual intervention
+test_commit_sparse_checkout() {
+    echo_info "Testing commit ID sparse checkout works automatically"
+
+    # Clean up any existing repository
+    ./skillsync remove-repo --force --hard vercel 2>/dev/null || true
+
+    # Add repository with commit ID
+    ./skillsync add-repo https://github.com/vercel-labs/agent-skills vercel "skills/react-best-practices/" 772252060741749696ce2abcb060c9efed6a5737
+
+    # Verify sparse checkout worked correctly (no manual commands needed)
+    if [ ! -d "skills-repos/vercel/skills/react-best-practices" ]; then
+        echo_failure "Sparse checkout did not work with commit ID"
+    fi
+
+    # Verify we're on the correct commit
+    local current_commit=$(cd "skills-repos/vercel" && git rev-parse HEAD)
+    if [ "$current_commit" != "772252060741749696ce2abcb060c9efed6a5737" ]; then
+        echo_failure "Repository not checked out to correct commit"
+    fi
+
+    # Verify sparse checkout is active
+    local sparse_status=$(cd "skills-repos/vercel" && git sparse-checkout list)
+    if [ "$sparse_status" != "skills/react-best-practices/" ]; then
+        echo_failure "Sparse checkout patterns not applied correctly"
+    fi
+
+    echo_success "Commit ID sparse checkout works without manual intervention"
+}
+
+# Test soft removal handles .gitmodules staging correctly
+test_soft_removal_gitmodules() {
+    echo_info "Testing soft removal handles .gitmodules staging correctly"
+
+    # Ensure repository exists first
+    if [ ! -d "skills-repos/vercel" ]; then
+        echo_failure "Repository should exist for this test"
+    fi
+
+    # Check .gitmodules has entries
+    local gitmodules_before=$(cat .gitmodules | wc -l)
+    if [ "$gitmodules_before" -eq 0 ]; then
+        echo_failure ".gitmodules should have entries before removal"
+    fi
+
+    # Perform soft removal
+    ./skillsync remove-repo --soft vercel
+
+    # Verify repository directory is preserved but .git is removed
+    if [ ! -d "skills-repos/vercel" ]; then
+        echo_failure "Repository directory should be preserved after soft removal"
+    fi
+
+    # Verify it's no longer a git submodule
+    if [ -d "skills-repos/vercel/.git" ]; then
+        echo_failure "Repository should no longer be a git submodule after soft removal"
+    fi
+
+    # Verify .gitmodules is clean (no vercel entries)
+    local gitmodules_content=$(cat .gitmodules)
+    if echo "$gitmodules_content" | grep -q "vercel"; then
+        echo_failure ".gitmodules should not contain vercel entries after soft removal"
+    fi
+
+    echo_success "Soft removal handles .gitmodules staging correctly"
+}
+
 # Cleanup test environment
 cleanup_test() {
     echo_info "Cleaning up test environment"
@@ -321,6 +393,8 @@ run_tests() {
     test_only_vercel_repo
     test_cleanup_with_skillsync
     test_readd_after_soft_removal
+    test_commit_sparse_checkout
+    test_soft_removal_gitmodules
 
     echo_success "All tests passed! ✅"
 

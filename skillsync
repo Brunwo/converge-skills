@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-SKILLS_ACTIVE="skills-active"
+SKILLS_ACTIVE="skills"
 SKILLS_REPOS="skills-repos"
 SKILLS_USER="skills-user"
 CONFIG=".skillsync/active-skills.json"
@@ -246,19 +246,19 @@ remove_repo() {
             echo "✗ Hard removed repository: $repo_name"
         fi
     else
-        # Soft removal: unregister submodule and clean up completely (no safety checks)
+        # Soft removal: unregister submodule but keep the files (only remove active skill symlinks)
         git submodule deinit -f "skills-repos/$repo_name" 2>/dev/null || true
 
         # Stage .gitmodules changes first, then remove from index and .gitmodules
         git add .gitmodules 2>/dev/null || true
-        git rm -f "skills-repos/$repo_name" 2>/dev/null || true
+        git rm --cached "skills-repos/$repo_name" 2>/dev/null || true  # Remove from index only, keep files
 
         # Clean up any leftover git modules
         if [ -d ".git/modules/skills-repos/$repo_name" ]; then
             rm -rf ".git/modules/skills-repos/$repo_name"
         fi
 
-        echo "✗ Soft removed repository: $repo_name (cleaned up completely)"
+        echo "✗ Soft removed repository: $repo_name (files preserved, symlinks removed)"
     fi
 }
 
