@@ -1,14 +1,1 @@
-[submodule "skills-repos/cloudflare"]
-	path = skills-repos/cloudflare
-	url = https://github.com/cloudflare/skills
-	branch = main
-	sparse-checkout = " skills/agents-sdk/*"
-[submodule "skills-repos/skills/react-best-practices"]
-	path = skills-repos/skills/react-best-practices
-	url = https://github.com/vercel-labs/agent-skills
-[submodule "skills-repos/agent-skills"]
-	path = skills-repos/agent-skills
-	url = https://github.com/vercel-labs/agent-skills
-[submodule "skills-repos/vercel-labs-agent-skills"]
-	path = skills-repos/vercel-labs-agent-skills
-	url = https://github.com/vercel-labs/agent-skills
+
