@@ -12,11 +12,42 @@ mkdir -p .skillsync
 # Add sparse submodule
 add_sparse_submodule() {
     local url=$1
-    local name=$2
-    local initial_paths=${3:-}
-    local ref=${4:-}  # Can be branch name or commit hash
+    local name=""
+    local initial_paths=""
+    local ref=""
 
-    echo "Adding sparse submodule: $name"
+    # URL is always $1
+    url=$1
+
+    # Always extract repo name from URL first
+    if [[ "$url" =~ github\.com[/:]([^/]+)/([^/.]+) ]]; then
+        local user="${BASH_REMATCH[1]}"
+        local repo="${BASH_REMATCH[2]}"
+        local default_name="$repo"
+    else
+        # Fallback: use last part of URL
+        local default_name=$(basename "$url" .git)
+    fi
+
+    # Check if $2 looks like patterns (contains / or starts with skills/)
+    if [[ "$2" =~ / ]] || [[ "$2" =~ ^skills/ ]]; then
+        # $2 looks like patterns, use default name from URL
+        name="$default_name"
+        initial_paths=$2
+        ref=${3:-}
+    else
+        # Traditional format: url name [paths] [ref]
+        # If $2 is provided and doesn't look like patterns, use it as custom name
+        if [ -n "$2" ]; then
+            name=$2
+        else
+            name="$default_name"
+        fi
+        initial_paths=${3:-}
+        ref=${4:-}
+    fi
+
+    echo "Adding sparse submodule: $name (from $url)"
 
     # Add as submodule (with optional branch or commit)
     if [ -n "$ref" ]; then
@@ -308,7 +339,7 @@ case "${1:-}" in
 Usage: skillsync <command> [args]
 
 Commands:
-  add-repo <url> <name> [initial_paths] [branch]   Add sparse submodule
+  add-repo <url> [name] [initial_paths] [branch]   Add sparse submodule (name auto-extracted from URL if omitted)
   remove-repo [--soft|--hard] [--force] <name>    Remove repository (--soft preserves files)
   add <source> <path> [id]                 Activate skill
   remove <id>                              Deactivate skill
@@ -316,17 +347,23 @@ Commands:
   restore                                  Restore symlinks from config
 
 Examples:
+  # Simplified: auto-extract repo name from URL
+  skillsync add-repo https://github.com/vercel-labs/agent-skills "skills/react-best-practices/"
+  skillsync add-repo https://github.com/cloudflare/skills "agents-sdk/"
+
+  # Traditional: specify custom name
   skillsync add-repo https://github.com/base-org/skills base "skills/postgres-patterns/*"
   skillsync add-repo https://github.com/vercel-labs/agent-skills vercel "skills/" install
+
+  # Repository management
   skillsync remove-repo vercel                    # Hard removal (default)
   skillsync remove-repo --soft vercel            # Soft removal (keeps files)
-  skillsync remove-repo --hard vercel            # Hard removal (explicit)
-  skillsync remove-repo --force --hard vercel    # Force hard removal (skip safety checks)
-  skillsync add base saas-multitenancy
-  skillsync add user custom-stripe
+
+  # Skill management
+  skillsync add agent-skills react-best-practices
+  skillsync add skills agents-sdk
   skillsync list
-  skillsync remove saas-multitenancy
-  skillsync restore
+  skillsync remove react-best-practices
 EOF
         ;;
 esac
