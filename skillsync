@@ -246,7 +246,8 @@ remove_repo() {
         # Soft removal: unregister submodule and clean up completely (no safety checks)
         git submodule deinit -f "skills-repos/$repo_name" 2>/dev/null || true
 
-        # Remove from index and .gitmodules
+        # Stage .gitmodules changes first, then remove from index and .gitmodules
+        git add .gitmodules 2>/dev/null || true
         git rm -f "skills-repos/$repo_name" 2>/dev/null || true
 
         # Clean up any leftover git modules
