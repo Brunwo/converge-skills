@@ -89,12 +89,27 @@ my-agent-project/
 
 ## Commands
 
-### `skillsync add-repo <url> <name> [initial_paths]`
+### `skillsync add-repo <url> <name> [initial_paths] [branch]`
 
-Add a skill repository as a sparse submodule.
+Add a skill repository as a sparse submodule from a specific branch.
 
 ```bash
+# Add from default branch
 ./skillsync add-repo https://github.com/base-org/skills base "skills/postgres-patterns/*"
+
+# Add from specific branch
+./skillsync add-repo https://github.com/vercel-labs/agent-skills vercel "skills/react-best-practices/" install
+
+# Add entire skills directory
+./skillsync add-repo https://github.com/community/agent-skills community "skills/"
+```
+
+### `skillsync remove-repo <name>`
+
+Remove an entire repository and all its associated skills.
+
+```bash
+./skillsync remove-repo vercel
 ```
 
 ### `skillsync add <source> <path> [id]`
@@ -103,6 +118,7 @@ Activate a skill from a repository or user directory.
 
 ```bash
 ./skillsync add base saas-multitenancy
+./skillsync add vercel react-best-practices
 ./skillsync add user custom-stripe my-stripe-skill
 ```
 
@@ -173,11 +189,13 @@ The included git hooks automatically restore symlinks after checkout or merge op
 
 ## Benefits
 
-- **Storage efficient**: Only downloads needed skills
+- **Maximum storage efficiency**: Downloads only specific skills, not entire repositories
+- **Branch support**: Track skills from any git branch (main, develop, install, etc.)
 - **Upstream contribution**: Full git workflow for contributing back
 - **Version control**: Everything tracked in git
 - **Team collaboration**: Configuration shared via git
 - **Clean separation**: Skills injected via symlinks, not copied
+- **Repository lifecycle management**: Add and remove entire skill repositories
 
 ## Advanced Usage
 
