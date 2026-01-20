@@ -270,7 +270,33 @@ test_readd_after_soft_removal() {
         echo_failure "Repository should be at correct commit after re-adding"
     fi
 
-    echo_success "Repository re-adding works without manual rm commands"
+    # Final cleanup: ensure workspace is completely clean via hard removal
+    echo_info "Performing final workspace cleanup"
+    ./skillsync remove-repo --hard vercel
+
+    # Verify no skills remain
+    local remaining_skills=$(./skillsync list)
+    if [ -n "$remaining_skills" ]; then
+        echo_failure "No skills should remain after hard removal"
+    fi
+
+    # Verify no repositories remain
+    if [ -d "skills-repos/vercel" ]; then
+        echo_failure "Repository directory should be completely removed"
+    fi
+
+    # Verify git index is clean
+    if git ls-files --stage | grep -q vercel; then
+        echo_failure "No vercel entries should remain in git index"
+    fi
+
+    # Verify .gitmodules is clean
+    local gitmodules_content=$(cat .gitmodules)
+    if echo "$gitmodules_content" | grep -q "vercel"; then
+        echo_failure ".gitmodules should be clean after hard removal"
+    fi
+
+    echo_success "Repository re-adding works without manual rm commands, workspace completely clean"
 }
 
 # Cleanup test environment
