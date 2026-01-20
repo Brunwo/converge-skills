@@ -14,13 +14,20 @@ add_sparse_submodule() {
     local url=$1
     local name=$2
     local initial_paths=${3:-}
-    local branch=${4:-}
+    local ref=${4:-}  # Can be branch name or commit hash
 
     echo "Adding sparse submodule: $name"
 
-    # Add as submodule (with optional branch)
-    if [ -n "$branch" ]; then
-        git submodule add -b "$branch" "$url" "$SKILLS_REPOS/$name"
+    # Add as submodule (with optional branch or commit)
+    if [ -n "$ref" ]; then
+        # Check if it's a commit hash (40 characters, hex) or branch name
+        if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            # It's a commit hash - add submodule normally
+            git submodule add "$url" "$SKILLS_REPOS/$name"
+        else
+            # It's a branch name - use -b flag
+            git submodule add -b "$ref" "$url" "$SKILLS_REPOS/$name"
+        fi
     else
         git submodule add "$url" "$SKILLS_REPOS/$name"
     fi
@@ -29,6 +36,11 @@ add_sparse_submodule() {
     cd "$SKILLS_REPOS/$name"
     git sparse-checkout init --cone
     git config core.sparseCheckout true
+
+    # If it's a commit hash, checkout to that specific commit first
+    if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+        git checkout "$ref"
+    fi
 
     # Clear working directory of tracked files not in sparse pattern
     git ls-files | grep -v '^\.git' | xargs -r rm -f
@@ -41,7 +53,7 @@ add_sparse_submodule() {
     fi
 
     # Checkout only sparse files and update index
-    git checkout
+    git checkout HEAD  # Make sure we're on the correct ref
     git read-tree -mu HEAD  # Update index to match sparse patterns
 
     cd ../..

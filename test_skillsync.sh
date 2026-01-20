@@ -55,8 +55,8 @@ setup_test() {
 test_add_vercel_skill() {
     echo_info "Testing addition of vercel/react-best-practices skill"
 
-    # Add the vercel repo with specific skill
-    ./skillsync add-repo https://github.com/vercel-labs/agent-skills vercel "skills/react-best-practices/" install
+    # Add the vercel repo with specific skill (using specific commit for test stability)
+    ./skillsync add-repo https://github.com/vercel-labs/agent-skills vercel "skills/react-best-practices/" 772252060741749696ce2abcb060c9efed6a5737
 
     # Check that the repo directory exists
     if [ ! -d "skills-repos/vercel" ]; then
@@ -96,7 +96,13 @@ test_add_vercel_skill() {
         echo_failure "Root AGENTS.md should not be checked out (sparse checkout failed)"
     fi
 
-    echo_success "Vercel repository added with correct sparse checkout"
+    # Verify the submodule is checked out to the correct commit
+    local current_commit=$(cd "skills-repos/vercel" && git rev-parse HEAD)
+    if [ "$current_commit" != "772252060741749696ce2abcb060c9efed6a5737" ]; then
+        echo_failure "Submodule not checked out to correct commit. Expected: 772252060741749696ce2abcb060c9efed6a5737, Got: $current_commit"
+    fi
+
+    echo_success "Vercel repository added with correct sparse checkout and commit"
 }
 
 # Test activating the skill
