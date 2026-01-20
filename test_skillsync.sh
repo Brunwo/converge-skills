@@ -371,6 +371,50 @@ test_soft_removal_gitmodules() {
     echo_success "Soft removal handles .gitmodules staging correctly"
 }
 
+# Test default behavior: add-repo with just URL adds all skills automatically
+test_add_repo_default_all_skills() {
+    echo_info "Testing default behavior: add-repo with URL only adds all skills"
+
+    # Clean up any existing repositories that might conflict
+    ./skillsync remove-repo --force --hard vercel-labs-agent-skills 2>/dev/null || true
+    ./skillsync remove-repo --force --hard vercel 2>/dev/null || true
+
+    # Add repository with just URL (no patterns specified) - should create vercel-labs-agent-skills
+    ./skillsync add-repo https://github.com/vercel-labs/agent-skills
+
+    # Verify correct directory name was created
+    if [ ! -d "skills-repos/vercel-labs-agent-skills" ]; then
+        echo_failure "Directory vercel-labs-agent-skills not created"
+    fi
+
+    # Verify it's a git repository
+    if [ ! -d "skills-repos/vercel-labs-agent-skills/.git" ]; then
+        echo_failure "Repository should be a valid git repo"
+    fi
+
+    # Verify all skills from the repo were added (at least react-best-practices should be there)
+    if [ ! -d "skills-repos/vercel-labs-agent-skills/skills" ]; then
+        echo_failure "Skills directory should exist"
+    fi
+
+    # Check that at least one skill was checked out
+    local skill_count=$(find "skills-repos/vercel-labs-agent-skills/skills" -maxdepth 1 -type d -not -name skills | wc -l)
+    if [ "$skill_count" -eq 0 ]; then
+        echo_failure "At least one skill should be checked out by default"
+    fi
+
+    # Verify sparse checkout is configured for all skills
+    local sparse_config=$(cd "skills-repos/vercel-labs-agent-skills" && git sparse-checkout list)
+    if [ -z "$sparse_config" ]; then
+        echo_failure "Sparse checkout should be configured for all skills"
+    fi
+
+    # Clean up this test's repository
+    ./skillsync remove-repo --force --hard vercel-labs-agent-skills 2>/dev/null || true
+
+    echo_success "Default behavior adds all skills from repository automatically"
+}
+
 # Cleanup test environment
 cleanup_test() {
     echo_info "Cleaning up test environment"
@@ -395,6 +439,7 @@ run_tests() {
     test_readd_after_soft_removal
     test_commit_sparse_checkout
     test_soft_removal_gitmodules
+    test_add_repo_default_all_skills
 
     echo_success "All tests passed! ✅"
 
