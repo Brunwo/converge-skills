@@ -243,16 +243,18 @@ remove_repo() {
             echo "✗ Hard removed repository: $repo_name"
         fi
     else
-        # Soft removal: unregister submodule and clean up directory
-        git submodule deinit -f "skills-repos/$repo_name"
-        git rm --cached "skills-repos/$repo_name" 2>/dev/null || true  # Remove from index if it exists
+        # Soft removal: unregister submodule and clean up completely (no safety checks)
+        git submodule deinit -f "skills-repos/$repo_name" 2>/dev/null || true
 
-        # Clean up the directory (safe since files are preserved elsewhere if needed)
-        if [ -d "skills-repos/$repo_name" ]; then
-            rm -rf "skills-repos/$repo_name"
+        # Remove from index and .gitmodules
+        git rm -f "skills-repos/$repo_name" 2>/dev/null || true
+
+        # Clean up any leftover git modules
+        if [ -d ".git/modules/skills-repos/$repo_name" ]; then
+            rm -rf ".git/modules/skills-repos/$repo_name"
         fi
 
-        echo "✗ Soft removed repository: $repo_name (submodule unregistered, directory cleaned)"
+        echo "✗ Soft removed repository: $repo_name (cleaned up completely)"
     fi
 }
 
