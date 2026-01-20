@@ -1,4 +1,5 @@
 [submodule "skills-repos/vercel"]
 	path = skills-repos/vercel
 	url = https://github.com/vercel-labs/agent-skills
-	sparse-checkout = " skills/react-best-practices/*"
+	sparse = true
+	sparse-checkout = skills/ skills/react-best-practices/*

@@ -26,7 +26,7 @@ add_sparse_submodule() {
     git config core.sparseCheckout true
 
     if [ -n "$initial_paths" ]; then
-        git sparse-checkout set $initial_paths
+        git sparse-checkout set --skip-checks $initial_paths
     fi
 
     git checkout
