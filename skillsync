@@ -31,7 +31,10 @@ add_sparse_submodule() {
     git config core.sparseCheckout true
 
     # Clear working directory of tracked files not in sparse pattern
-    git ls-files | xargs -r rm -f
+    git ls-files | grep -v '^\.git' | xargs -r rm -f
+    # Also remove any remaining files/directories except .git
+    find . -maxdepth 1 -name '.git' -prune -o -type f -print | grep -v '^\./\.git' | xargs -r rm -f
+    find . -maxdepth 1 -name '.git' -prune -o -type d -print | grep -v '^\./\.git' | xargs -r rm -rf
 
     if [ -n "$initial_paths" ]; then
         git sparse-checkout set --skip-checks $initial_paths
