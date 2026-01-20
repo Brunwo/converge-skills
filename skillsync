@@ -32,14 +32,17 @@ add_sparse_submodule() {
         git submodule add "$url" "$SKILLS_REPOS/$name"
     fi
 
-    # Configure sparse checkout BEFORE cleaning
+    # Configure sparse checkout
     cd "$SKILLS_REPOS/$name"
     git sparse-checkout init --cone
     git config core.sparseCheckout true
 
-    # If it's a commit hash, checkout to that specific commit first
+    # If it's a commit hash, checkout to that specific commit
     if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
         git checkout "$ref"
+        # Reapply sparse checkout after commit checkout
+        git sparse-checkout init --cone
+        git config core.sparseCheckout true
     fi
 
     # Clear working directory of tracked files not in sparse pattern
