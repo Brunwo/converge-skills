@@ -17,8 +17,8 @@ add_sparse_submodule() {
 
     echo "Adding sparse submodule: $name"
 
-    # Add as submodule with no checkout
-    git submodule add --depth=1 --no-checkout "$url" "$SKILLS_REPOS/$name"
+    # Add as submodule
+    git submodule add "$url" "$SKILLS_REPOS/$name"
 
     # Configure sparse checkout
     cd "$SKILLS_REPOS/$name"
@@ -80,7 +80,7 @@ add_skill() {
     # Update sparse checkout
     if [ "$source" != "user" ]; then
         cd "$SKILLS_REPOS/$source"
-        git sparse-checkout add "skills/$skill_path/*"
+        git sparse-checkout add --skip-checks "skills/$skill_path/*"
         git checkout HEAD  # materialize files
         cd ../..
 
