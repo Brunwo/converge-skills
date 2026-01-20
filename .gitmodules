@@ -3,4 +3,4 @@
 	url = https://github.com/vercel-labs/agent-skills
 	branch = install
 	sparse = true
-	sparse-checkout = skills/react-best-practices/ skills/react-best-practices/*
+	sparse-checkout = skills/react-best-practices/

@@ -25,20 +25,22 @@ add_sparse_submodule() {
         git submodule add "$url" "$SKILLS_REPOS/$name"
     fi
 
-    # Configure sparse checkout
+    # Configure sparse checkout BEFORE cleaning
     cd "$SKILLS_REPOS/$name"
     git sparse-checkout init --cone
     git config core.sparseCheckout true
 
-    # Clear working directory of any files that shouldn't be there
-    git ls-files --others --cached | xargs -r rm -f
-    find . -maxdepth 1 -type f -not -name '.git' -not -name '.gitmodules' | xargs -r rm -f
+    # Clear working directory of tracked files not in sparse pattern
+    git ls-files | xargs -r rm -f
 
     if [ -n "$initial_paths" ]; then
         git sparse-checkout set --skip-checks $initial_paths
     fi
 
+    # Checkout only sparse files and update index
     git checkout
+    git read-tree -mu HEAD  # Update index to match sparse patterns
+
     cd ../..
 
     # Save to .gitmodules metadata
