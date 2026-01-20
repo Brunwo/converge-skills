@@ -4,3 +4,7 @@
 	branch = install
 	sparse = true
 	sparse-checkout = skills/react-best-practices/ skills/react-best-practices/*
+[submodule "skills-repos/cloudflare"]
+	path = skills-repos/cloudflare
+	url = https://github.com/cloudflare/skills
+	branch = main

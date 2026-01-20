@@ -81,7 +81,14 @@ activate_skills() {
                 target="../$SKILLS_USER/$path"
                 ;;
             *)
-                target="../$SKILLS_REPOS/$source/skills/$path"
+                # Check for both repository structures: with and without skills/ subdirectory
+                if [ -d "$SKILLS_REPOS/$source/skills/$path" ]; then
+                    target="../$SKILLS_REPOS/$source/skills/$path"
+                elif [ -d "$SKILLS_REPOS/$source/$path" ]; then
+                    target="../$SKILLS_REPOS/$source/$path"
+                else
+                    target="../$SKILLS_REPOS/$source/skills/$path"  # Default to skills/ subdirectory
+                fi
                 ;;
         esac
 
@@ -106,13 +113,25 @@ add_skill() {
     # Update sparse checkout
     if [ "$source" != "user" ]; then
         cd "$SKILLS_REPOS/$source"
-        git sparse-checkout add --skip-checks "skills/$skill_path/*"
-        git checkout HEAD  # materialize files
+
+        # Check repository structure and add appropriate pattern
+        if [ -d "skills/$skill_path" ]; then
+            # Repository has skills/ subdirectory (like Vercel)
+            git sparse-checkout add --skip-checks "skills/$skill_path/*"
+            git checkout HEAD  # materialize files
+        elif [ -d "$skill_path" ]; then
+            # Repository has skills directly in root (like Cloudflare)
+            git sparse-checkout add --skip-checks "$skill_path"
+            git checkout HEAD  # materialize files
+        fi
+
         cd ../..
 
-        # Update .gitmodules
-        local current=$(git config -f .gitmodules "submodule.$SKILLS_REPOS/$source.sparse-checkout" || echo "")
-        git config -f .gitmodules "submodule.$SKILLS_REPOS/$source.sparse-checkout" "$current skills/$skill_path/*"
+        # Update .gitmodules (only if we added a skills/ pattern)
+        if [ -d "$SKILLS_REPOS/$source/skills/$skill_path" ]; then
+            local current=$(git config -f .gitmodules "submodule.$SKILLS_REPOS/$source.sparse-checkout" || echo "")
+            git config -f .gitmodules "submodule.$SKILLS_REPOS/$source.sparse-checkout" "$current skills/$skill_path/*"
+        fi
     fi
 
     # Add to config
