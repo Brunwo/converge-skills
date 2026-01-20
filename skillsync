@@ -14,16 +14,25 @@ add_sparse_submodule() {
     local url=$1
     local name=$2
     local initial_paths=${3:-}
+    local branch=${4:-}
 
     echo "Adding sparse submodule: $name"
 
-    # Add as submodule
-    git submodule add "$url" "$SKILLS_REPOS/$name"
+    # Add as submodule (with optional branch)
+    if [ -n "$branch" ]; then
+        git submodule add -b "$branch" "$url" "$SKILLS_REPOS/$name"
+    else
+        git submodule add "$url" "$SKILLS_REPOS/$name"
+    fi
 
     # Configure sparse checkout
     cd "$SKILLS_REPOS/$name"
     git sparse-checkout init --cone
     git config core.sparseCheckout true
+
+    # Clear working directory of any files that shouldn't be there
+    git ls-files --others --cached | xargs -r rm -f
+    find . -maxdepth 1 -type f -not -name '.git' -not -name '.gitmodules' | xargs -r rm -f
 
     if [ -n "$initial_paths" ]; then
         git sparse-checkout set --skip-checks $initial_paths
@@ -142,7 +151,7 @@ restore() {
 # Main command dispatcher
 case "${1:-}" in
     add-repo)
-        add_sparse_submodule "$2" "$3" "${4:-}"
+        add_sparse_submodule "$2" "$3" "${4:-}" "${5:-}"
         ;;
     add)
         add_skill "$2" "$3" "${4:-}"
@@ -161,7 +170,7 @@ case "${1:-}" in
 Usage: skillsync <command> [args]
 
 Commands:
-  add-repo <url> <name> [initial_paths]   Add sparse submodule
+  add-repo <url> <name> [initial_paths] [branch]   Add sparse submodule
   add <source> <path> [id]                Activate skill
   remove <id>                             Deactivate skill
   list                                    List active skills
@@ -169,6 +178,7 @@ Commands:
 
 Examples:
   skillsync add-repo https://github.com/base-org/skills base "skills/postgres-patterns/*"
+  skillsync add-repo https://github.com/vercel-labs/agent-skills vercel "skills/" install
   skillsync add base saas-multitenancy
   skillsync add user custom-stripe
   skillsync list
