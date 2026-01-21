@@ -1,1 +1,9 @@
 
+[submodule "skills-repos/vercel-labs-agent-skills"]
+	path = skills-repos/vercel-labs-agent-skills
+	url = https://github.com/vercel-labs/agent-skills
+	sparse = true
+	sparse-checkout = skills/claude.ai/* skills/react-best-practices/* skills/web-design-guidelines/* skills/claude.ai/* skills/react-best-practices/* skills/web-design-guidelines/* skills/claude.ai/* skills/react-best-practices/* skills/web-design-guidelines/* skills/claude.ai/* skills/react-best-practices/* skills/web-design-guidelines/* skills/claude.ai/* skills/react-best-practices/* skills/web-design-guidelines/* skills/claude.ai/* skills/react-best-practices/* skills/web-design-guidelines/* skills/claude.ai/* skills/react-best-practices/* skills/web-design-guidelines/* skills/claude.ai/* skills/react-best-practices/* skills/web-design-guidelines/* skills/claude.ai/* skills/react-best-practices/rules/* skills/claude.ai/* skills/react-best-practices/rules/* skills/claude.ai/* skills/react-best-practices/rules/* skills/claude.ai/* skills/react-best-practices/rules/* skills/claude.ai/* skills/react-best-practices/rules/* skills/claude.ai/* skills/react-best-practices/rules/* skills/claude.ai/* skills/react-best-practices/rules/* skills/claude.ai/* skills/react-best-practices/rules/* skills/claude.ai/*
+[submodule "skills-repos/anthropics-skills"]
+	path = skills-repos/anthropics-skills
+	url = https://github.com/anthropics/skills

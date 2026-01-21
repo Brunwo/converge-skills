@@ -64,7 +64,7 @@ test_add_vercel_skill() {
     fi
 
     # Check that it's a git repository
-    if [ ! -d "skills-repos/vercel/.git" ]; then
+    if [ ! -e "skills-repos/vercel/.git" ]; then
         echo_failure "skills-repos/vercel is not a git repository"
     fi
 
@@ -112,19 +112,19 @@ test_activate_skill() {
     # Add the skill
     ./skillsync add vercel react-best-practices
 
-    # Check that skills-active directory exists
-    if [ ! -d "skills-active" ]; then
-        echo_failure "skills-active directory not created"
+    # Check that skills directory exists
+    if [ ! -d "skills" ]; then
+        echo_failure "skills directory not created"
     fi
 
     # Check that the symlink exists
-    if [ ! -L "skills-active/react-best-practices" ]; then
+    if [ ! -L "skills/react-best-practices" ]; then
         echo_failure "react-best-practices symlink not created"
     fi
 
     # Check that the symlink points to the correct location
-    local symlink_target=$(readlink "skills-active/react-best-practices")
-    if [ "$symlink_target" != "../skills-repos/vercel/skills/react-best-practices/" ]; then
+    local symlink_target=$(readlink "skills/react-best-practices")
+    if [ "$symlink_target" != "../skills-repos/vercel/skills/react-best-practices" ]; then
         echo_failure "Symlink points to wrong location: $symlink_target"
     fi
 
@@ -213,7 +213,7 @@ test_cleanup_with_skillsync() {
     fi
 
     # Verify symlink is removed
-    if [ -L "skills-active/react-best-practices" ]; then
+    if [ -L "skills/react-best-practices" ]; then
         echo_failure "Symlink should be removed after skill deactivation"
     fi
 
@@ -226,7 +226,7 @@ test_cleanup_with_skillsync() {
     fi
 
     # Verify it's no longer a git submodule (but files remain)
-    if [ -d "skills-repos/vercel/.git" ]; then
+    if [ -e "skills-repos/vercel/.git" ]; then
         echo_failure "Repository should no longer be a git submodule after soft removal"
     fi
 
@@ -260,7 +260,7 @@ test_readd_after_soft_removal() {
     fi
 
     # Verify it's a git repository
-    if [ ! -d "skills-repos/vercel/.git" ]; then
+    if [ ! -e "skills-repos/vercel/.git" ]; then
         echo_failure "Re-added repository should be a valid git repo"
     fi
 
@@ -358,7 +358,7 @@ test_soft_removal_gitmodules() {
     fi
 
     # Verify it's no longer a git submodule
-    if [ -d "skills-repos/vercel/.git" ]; then
+    if [ -e "skills-repos/vercel/.git" ]; then
         echo_failure "Repository should no longer be a git submodule after soft removal"
     fi
 
@@ -388,7 +388,7 @@ test_add_repo_default_all_skills() {
     fi
 
     # Verify it's a git repository
-    if [ ! -d "skills-repos/vercel-labs-agent-skills/.git" ]; then
+    if [ ! -e "skills-repos/vercel-labs-agent-skills/.git" ]; then
         echo_failure "Repository should be a valid git repo"
     fi
 
@@ -413,6 +413,130 @@ test_add_repo_default_all_skills() {
     ./skillsync remove-repo --force --hard vercel-labs-agent-skills 2>/dev/null || true
 
     echo_success "Default behavior adds all skills from repository automatically"
+}
+
+# Test adding repository via URL and verify automatic activation
+test_add_url_and_activation() {
+    echo_info "Testing automatic activation when adding via URL"
+
+    # Clean up any existing repositories that might conflict
+    ./skillsync remove-repo --force --hard vercel-labs-agent-skills 2>/dev/null || true
+
+    # Add repository with just URL via 'add' command
+    ./skillsync add https://github.com/vercel-labs/agent-skills
+
+    # Verify repository exists
+    if [ ! -d "skills-repos/vercel-labs-agent-skills" ]; then
+        echo_failure "Repository directory not created"
+    fi
+
+    # Verify skills directory exists and is populated with symlinks
+    if [ ! -d "skills" ]; then
+        echo_failure "Active skills directory 'skills' not created"
+    fi
+
+    # Check for specific symlink (react-best-practices)
+    if [ ! -L "skills/react-best-practices" ]; then
+        echo_failure "Skill symlink 'react-best-practices' not created automatically"
+    fi
+
+    # Verify symlink target
+    local symlink_target=$(readlink "skills/react-best-practices")
+    if [ "$symlink_target" != "../skills-repos/vercel-labs-agent-skills/skills/react-best-practices" ]; then
+        echo_failure "Symlink points to wrong location: $symlink_target"
+    fi
+
+    echo_success "Automatic skill activation via URL add working correctly"
+}
+
+# Test that removing a repository also removes its skills from the active skills directory
+test_remove_repo_removes_skills() {
+    echo_info "Testing skill removal from 'skills/' when repository is removed"
+
+    # Clean up any existing repositories that might conflict
+    ./skillsync remove-repo --force --hard vercel-labs-agent-skills 2>/dev/null || true
+
+    # Add repository via URL (activates skills)
+    ./skillsync add https://github.com/vercel-labs/agent-skills
+
+    # Verify skills exist
+    if [ ! -L "skills/react-best-practices" ]; then
+        echo_failure "Skill symlink should exist before removal"
+    fi
+
+    # Remove repository (hard removal)
+    ./skillsync remove-repo --hard --force vercel-labs-agent-skills
+
+    # Verify skills are gone from 'skills/'
+    if [ -L "skills/react-best-practices" ]; then
+        echo_failure "Skill symlink should be removed after repository removal"
+    fi
+
+    echo_success "Skills correctly removed from 'skills/' folder upon repository removal"
+}
+
+# Test that removing a repository via URL (./skillsync remove <URL>) works
+test_remove_url() {
+    echo_info "Testing repository removal via URL (./skillsync remove <URL>)"
+
+    # Clean up any existing repositories that might conflict
+    ./skillsync remove-repo --force --hard vercel-labs-agent-skills 2>/dev/null || true
+
+    # Add repository via URL (activates skills)
+    ./skillsync add https://github.com/vercel-labs/agent-skills
+
+    # Verify skills and repo exist
+    if [ ! -L "skills/react-best-practices" ]; then
+        echo_failure "Skill symlink should exist before removal"
+    fi
+    if [ ! -d "skills-repos/vercel-labs-agent-skills" ]; then
+        echo_failure "Repo directory should exist before removal"
+    fi
+
+    # Remove repository via URL
+    ./skillsync remove https://github.com/vercel-labs/agent-skills
+
+    # Verify skills are gone but repo directory STILL EXISTS
+    if [ -L "skills/react-best-practices" ]; then
+        echo_failure "Skill symlink should be removed after URL removal"
+    fi
+    if [ ! -d "skills-repos/vercel-labs-agent-skills" ]; then
+        echo_failure "Repo directory should be PRESERVED after URL removal"
+    fi
+
+    echo_success "Skills correctly removed but repository preserved via URL removal"
+}
+
+# Test that removing a specific skill via URL (./skillsync remove <URL> <path>) works
+test_remove_skill_via_url() {
+    echo_info "Testing specific skill removal via URL (./skillsync remove <URL> <path>)"
+
+    # Clean up
+    ./skillsync remove-repo --force --hard vercel-labs-agent-skills 2>/dev/null || true
+
+    # Add repo with all skills
+    ./skillsync add https://github.com/vercel-labs/agent-skills
+
+    # Verify multiple skills exist
+    if [ ! -L "skills/react-best-practices" ] || [ ! -L "skills/claude.ai" ]; then
+        echo_failure "Initial skills should exist"
+    fi
+
+    # Remove only ONE skill via URL
+    ./skillsync remove https://github.com/vercel-labs/agent-skills claude.ai
+
+    # Verify ONLY claude.ai is gone
+    if [ -L "skills/claude.ai" ]; then
+        echo_failure "claude.ai should be removed"
+    fi
+    if [ ! -L "skills/react-best-practices" ]; then
+        echo_failure "react-best-practices should be preserved"
+    fi
+    if [ ! -d "skills-repos/vercel-labs-agent-skills" ]; then
+        echo_failure "Repo should be preserved"
+    fi
+
+    echo_success "Specific skill deactivated via URL correctly"
 }
 
 # Cleanup test environment
@@ -440,6 +564,10 @@ run_tests() {
     test_commit_sparse_checkout
     test_soft_removal_gitmodules
     test_add_repo_default_all_skills
+    test_add_url_and_activation
+    test_remove_repo_removes_skills
+    test_remove_url
+    test_remove_skill_via_url
 
     echo_success "All tests passed! ✅"
 

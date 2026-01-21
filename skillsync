@@ -9,6 +9,16 @@ CONFIG=".skillsync/active-skills.json"
 # Initialize config directory
 mkdir -p .skillsync
 
+# Derive user-repo name from git URL
+get_repo_name() {
+    local url=$1
+    if [[ "$url" =~ github\.com[/:]([^/]+)/([^/.]+) ]]; then
+        echo "${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
+    else
+        basename "$url" .git
+    fi
+}
+
 # Add sparse submodule
 add_sparse_submodule() {
     local url=$1
@@ -49,58 +59,50 @@ add_sparse_submodule() {
 
     echo "Adding sparse submodule: $name (from $url)"
 
-    # Add as submodule (with optional branch or commit)
-    if [ -n "$ref" ]; then
-        # Check if it's a commit hash (40 characters, hex) or branch name
-        if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
-            # It's a commit hash - add submodule normally
-            git submodule add "$url" "$SKILLS_REPOS/$name"
-        else
-            # It's a branch name - use -b flag
-            git submodule add -b "$ref" "$url" "$SKILLS_REPOS/$name"
-        fi
+    # Handle case where directory exists but is not a git repo (e.g. after soft removal)
+    if [ -d "$SKILLS_REPOS/$name" ] && [ ! -e "$SKILLS_REPOS/$name/.git" ]; then
+        echo "⚠ Warning: Directory '$SKILLS_REPOS/$name' exists but is not a git repository. Clearing it for re-adding..."
+        rm -rf "$SKILLS_REPOS/$name"
+    fi
+
+    # Add as submodule (with optional branch or commit) if not already in index
+    if git ls-files --error-unmatch "$SKILLS_REPOS/$name" >/dev/null 2>&1; then
+        echo "ℹ Repository '$name' already in index, skipping 'submodule add'"
     else
-        git submodule add "$url" "$SKILLS_REPOS/$name"
+        if [ -n "$ref" ]; then
+            # Check if it's a commit hash (40 characters, hex) or branch name
+            if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+                # It's a commit hash - add submodule normally
+                git submodule add -q "$url" "$SKILLS_REPOS/$name"
+            else
+                # It's a branch name - use -b flag
+                git submodule add -q -b "$ref" "$url" "$SKILLS_REPOS/$name"
+            fi
+        else
+            git submodule add -q "$url" "$SKILLS_REPOS/$name"
+        fi
     fi
 
-    # Configure sparse checkout
+    # Configure sparse checkout (non-cone mode to allow excluding root files)
     cd "$SKILLS_REPOS/$name"
-    git sparse-checkout init --cone
-    git config core.sparseCheckout true
-
-    # If it's a commit hash, checkout to that specific commit
-    if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
-        git checkout "$ref"
-        # Reapply sparse checkout after commit checkout
-        git sparse-checkout init --cone
-        git config core.sparseCheckout true
-    fi
-
-    # Clear working directory of tracked files not in sparse pattern
-    git ls-files | grep -v '^\.git' | xargs -r rm -f
-    # Also remove any remaining files/directories except .git
-    find . -maxdepth 1 -name '.git' -prune -o -type f -print | grep -v '^\./\.git' | xargs -r rm -f
-    find . -maxdepth 1 -name '.git' -prune -o -type d -print | grep -v '^\./\.git' | xargs -r rm -rf
+    git sparse-checkout init --no-cone >/dev/null 2>&1
 
     # Determine sparse checkout patterns
     local sparse_patterns=""
     if [ -n "$initial_paths" ]; then
         # User specified specific patterns
         sparse_patterns="$initial_paths"
-        git sparse-checkout set --skip-checks $sparse_patterns
+        git sparse-checkout set --no-cone --skip-checks $sparse_patterns
     else
         # No patterns specified - add ALL skills from repository
         echo "No patterns specified, adding all skills from repository..."
 
-        # First, do a minimal checkout to see repository structure
-        git sparse-checkout set --skip-checks "README.md" "skills/" "*/"
-        git checkout HEAD
-
-        # Detect repository structure and collect all skills
-        if [ -d "skills" ] && [ "$(find skills -maxdepth 1 -type d | wc -l)" -gt 1 ]; then
+        # Detect repository structure and collect all skills via ls-tree
+        # This is more robust as it doesn't require materializing files first
+        if git ls-tree -d HEAD skills/ >/dev/null 2>&1; then
             # Vercel-style: skills in subdirectory
             echo "Detected Vercel-style repository structure (skills/ subdirectory)"
-            local skill_dirs=$(find skills -maxdepth 1 -type d -not -name skills | sed 's|^skills/|skills/|')
+            local skill_dirs=$(git ls-tree -d HEAD skills/ | awk '{print $4}')
             sparse_patterns=""
             for dir in $skill_dirs; do
                 sparse_patterns="$sparse_patterns $dir/*"
@@ -109,13 +111,13 @@ add_sparse_submodule() {
         else
             # Cloudflare-style: skills in root or other structure
             echo "Detected root-level or Cloudflare-style repository structure"
-            local skill_dirs=$(find . -maxdepth 1 -type d -not -name .git -not -name . -not -name skills | head -10)
+            # Get top level directories, exclude common ones
+            local skill_dirs=$(git ls-tree -d HEAD | grep '^04' | awk '{print $4}')
             sparse_patterns=""
             for dir in $skill_dirs; do
-                local dirname=$(basename "$dir")
                 # Skip common non-skill directories
-                if [[ "$dirname" != ".git" ]] && [[ "$dirname" != "docs" ]] && [[ "$dirname" != "scripts" ]] && [[ "$dirname" != ".github" ]]; then
-                    sparse_patterns="$sparse_patterns $dirname"
+                if [[ "$dir" != "docs" ]] && [[ "$dir" != "scripts" ]] && [[ "$dir" != ".github" ]]; then
+                    sparse_patterns="$sparse_patterns $dir/*"
                 fi
             done
             sparse_patterns=$(echo "$sparse_patterns" | sed 's/^ *//')  # Remove leading space
@@ -123,16 +125,19 @@ add_sparse_submodule() {
 
         if [ -n "$sparse_patterns" ]; then
             echo "Adding all skills: $sparse_patterns"
-            git sparse-checkout set --skip-checks $sparse_patterns
+            git sparse-checkout set --no-cone --skip-checks $sparse_patterns
         else
             echo "Warning: No skills found in repository"
             sparse_patterns=""
         fi
     fi
 
-    # Checkout only sparse files and update index
-    git checkout HEAD  # Make sure we're on the correct ref
-    git read-tree -mu HEAD  # Update index to match sparse patterns
+    # Now checkout the specific commit or update working tree to patterns
+    if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+        git checkout -q "$ref"
+    else
+        git checkout -q HEAD
+    fi
 
     cd ../..
 
@@ -159,13 +164,22 @@ activate_skills() {
                 target="../$SKILLS_USER/$path"
                 ;;
             *)
+                local repo_dir="$source"
+                # If the exact source dir doesn't exist, try to find a matching one
+                if [ ! -d "$SKILLS_REPOS/$repo_dir" ]; then
+                    local match=$(ls "$SKILLS_REPOS" 2>/dev/null | grep "$source" | head -n 1 || echo "")
+                    if [ -n "$match" ]; then
+                        repo_dir="$match"
+                    fi
+                fi
+
                 # Check for both repository structures: with and without skills/ subdirectory
-                if [ -d "$SKILLS_REPOS/$source/skills/$path" ]; then
-                    target="../$SKILLS_REPOS/$source/skills/$path"
-                elif [ -d "$SKILLS_REPOS/$source/$path" ]; then
-                    target="../$SKILLS_REPOS/$source/$path"
+                if [ -d "$SKILLS_REPOS/$repo_dir/skills/$path" ]; then
+                    target="../$SKILLS_REPOS/$repo_dir/skills/$path"
+                elif [ -d "$SKILLS_REPOS/$repo_dir/$path" ]; then
+                    target="../$SKILLS_REPOS/$repo_dir/$path"
                 else
-                    target="../$SKILLS_REPOS/$source/skills/$path"  # Default to skills/ subdirectory
+                    target="../$SKILLS_REPOS/$repo_dir/skills/$path"  # Default to skills/ subdirectory
                 fi
                 ;;
         esac
@@ -182,6 +196,54 @@ activate_skills() {
     echo "$skills_json" | jq '.' > "$CONFIG"
 }
 
+# Add skill or repo (handles both URLs and source names)
+add_skill_or_repo() {
+    local arg1="${1:-}"
+    local arg2="${2:-.}"
+    local arg3="${3:-}"
+    local arg4="${4:-}"
+    
+    # Check if arg1 is a URL
+    if [[ "$arg1" =~ ^https?:// ]]; then
+        # URL provided - call add-repo then optionally add specific skill
+        local url="$arg1"
+        local path="$arg2"
+        local ref="$arg3"
+        
+        # First ensure the repo exists and is configured
+        local repo_name=$(get_repo_name "$url")
+        local has_patterns=$(git config -f .gitmodules "submodule.$SKILLS_REPOS/$repo_name.sparse-checkout" || echo "")
+        
+        if [ ! -d "$SKILLS_REPOS/$repo_name" ] || [ -z "$has_patterns" ]; then
+            # Add or re-configure the repo
+            add_sparse_submodule "$url" "" "" "$ref"
+        fi
+        
+        if [ "$path" != "." ]; then
+            add_skill "$repo_name" "$path" "$arg4"
+        else
+            # Auto-activate all skills found in the repo
+            echo "Auto-activating all skills from $repo_name..."
+            local patterns=$(git config -f .gitmodules "submodule.$SKILLS_REPOS/$repo_name.sparse-checkout" || echo "")
+            if [ -z "$patterns" ]; then
+                echo "⚠ No patterns found for $repo_name, skipping auto-activation"
+            else
+                for pattern in $patterns; do
+                    # Clean up pattern (e.g. "skills/foo/*" -> "foo")
+                    local clean_path=$(echo "$pattern" | sed 's|/\*$||' | sed 's|^skills/||')
+                    if [ -n "$clean_path" ]; then
+                        add_skill "$repo_name" "$clean_path" "" "skip-activation"
+                    fi
+                done
+                restore
+            fi
+        fi
+    else
+        # Source name provided - existing workflow
+        add_skill "$arg1" "$arg2" "$arg3"
+    fi
+}
+
 # Add skill to sparse checkout and activate
 add_skill() {
     local source=$1
@@ -195,12 +257,12 @@ add_skill() {
         # Check repository structure and add appropriate pattern
         if [ -d "skills/$skill_path" ]; then
             # Repository has skills/ subdirectory (like Vercel)
-            git sparse-checkout add --skip-checks "skills/$skill_path/*"
-            git checkout HEAD  # materialize files
+            git sparse-checkout add --skip-checks "skills/$skill_path/*" >/dev/null 2>&1
+            git checkout -q HEAD  # materialize files
         elif [ -d "$skill_path" ]; then
             # Repository has skills directly in root (like Cloudflare)
-            git sparse-checkout add --skip-checks "$skill_path"
-            git checkout HEAD  # materialize files
+            git sparse-checkout add --skip-checks "$skill_path" >/dev/null 2>&1
+            git checkout -q HEAD  # materialize files
         fi
 
         cd ../..
@@ -225,7 +287,12 @@ add_skill() {
         local updated="[$new_skill]"
     fi
 
-    activate_skills "$updated"
+    if [ "${4:-}" != "skip-activation" ]; then
+        activate_skills "$updated"
+    else
+        # Save config even if skipping activation
+        echo "$updated" | jq '.' > "$CONFIG"
+    fi
 }
 
 # Remove skill
@@ -240,6 +307,63 @@ remove_skill() {
 
     echo "$updated" | jq '.' > "$CONFIG"
     echo "✗ Deactivated: $skill_id"
+}
+
+# Deactivate all skills associated with a repository
+deactivate_repo_skills() {
+    local repo_name=$1
+    
+    echo "Deactivating all skills from repository: $repo_name"
+
+    # Remove all skills from this repo from the config
+    if [ -f "$CONFIG" ]; then
+        local updated=$(jq --arg repo "$repo_name" 'map(select(.source != $repo))' "$CONFIG")
+        echo "$updated" | jq '.' > "$CONFIG"
+    fi
+
+    # Remove symlinks for this repo's skills
+    if [ -d "$SKILLS_ACTIVE" ]; then
+        # Find all symlinks in skills/ that point to the target repo and remove them
+        # We use a pattern that matches the relative symlink target structure
+        find "$SKILLS_ACTIVE" -type l -lname "*../$SKILLS_REPOS/$repo_name/*" -delete
+    fi
+}
+
+# Remove skill or repo (handles both URLs and skill IDs)
+remove_skill_or_repo() {
+    local arg1="${1:-}"
+    local arg2="${2:-}"
+    
+    # Check if arg1 is a URL
+    if [[ "$arg1" =~ ^https?:// ]]; then
+        # URL provided - extract repo name
+        local repo_name=$(get_repo_name "$arg1")
+        
+        if [ -n "$arg2" ]; then
+            # Specific skill deactivated from this repo
+            # Search for skill matching this source and (path or id)
+            local skill_id=$(jq -r --arg src "$repo_name" --arg p "$arg2" '.[] | select(.source == $src and (.path == $p or .id == $p)) | .id' "$CONFIG" 2>/dev/null | head -n 1 || echo "")
+            
+            if [ -n "$skill_id" ]; then
+                remove_skill "$skill_id"
+            else
+                # Also try matching by basename of path
+                skill_id=$(jq -r --arg src "$repo_name" --arg p "$arg2" '.[] | select(.source == $src and (.path | endswith($p))) | .id' "$CONFIG" 2>/dev/null | head -n 1 || echo "")
+                if [ -n "$skill_id" ]; then
+                    remove_skill "$skill_id"
+                else
+                    echo "⚠ Warning: Skill '$arg2' not found in repository '$repo_name' (active-skills.json)"
+                fi
+            fi
+        else
+            # Deactivate all skills from this repo
+            deactivate_repo_skills "$repo_name"
+            echo "✗ Deactivated all skills from: $arg1 (repository preserved)"
+        fi
+    else
+        # Skill ID provided
+        remove_skill "$arg1"
+    fi
 }
 
 # List active skills
@@ -296,22 +420,12 @@ remove_repo() {
         fi
     fi
 
-    # Remove all skills from this repo
-    if [ -f "$CONFIG" ]; then
-        local updated=$(jq --arg repo "$repo_name" 'map(select(.source != $repo))' "$CONFIG")
-        echo "$updated" | jq '.' > "$CONFIG"
-    fi
-
-    # Remove symlinks for this repo's skills
-    find "$SKILLS_ACTIVE" -type l | while read -r link; do
-        local target=$(readlink "$link")
-        if [[ "$target" == *"../skills-repos/$repo_name"* ]]; then
-            rm -f "$link"
-        fi
-    done
+    # Deactivate all skills from this repo
+    deactivate_repo_skills "$repo_name"
 
     if [ "$mode" = "hard" ]; then
         # Hard removal: delete submodule completely
+        git add .gitmodules 2>/dev/null || true
         git submodule deinit -f "skills-repos/$repo_name"
         git rm -f "skills-repos/$repo_name"
         rm -rf ".git/modules/skills-repos/$repo_name"
@@ -327,6 +441,10 @@ remove_repo() {
         # Stage .gitmodules changes first, then remove from index and .gitmodules
         git add .gitmodules 2>/dev/null || true
         git rm --cached "skills-repos/$repo_name" 2>/dev/null || true  # Remove from index only, keep files
+
+        # Clean up .gitmodules section explicitly
+        git config -f .gitmodules --remove-section "submodule.skills-repos/$repo_name" 2>/dev/null || true
+        git add .gitmodules 2>/dev/null || true
 
         # Clean up any leftover git modules
         if [ -d ".git/modules/skills-repos/$repo_name" ]; then
@@ -348,34 +466,58 @@ case "${1:-}" in
         add_sparse_submodule "$arg2" "$arg3" "$arg4" "$arg5"
         ;;
     remove-repo)
-        case "${2:-}" in
-            --soft)
-                remove_repo "$3" "soft" "false"
-                ;;
-            --force)
-                case "${3:-}" in
-                    --hard)
-                        remove_repo "$4" "hard" "true"
-                        ;;
-                    *)
-                        echo "❌ Error: --force must be used with --hard"
+        shift
+        repo_name=""
+        mode="hard"
+        force="false"
+
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --soft)
+                    mode="soft"
+                    shift
+                    ;;
+                --hard)
+                    mode="hard"
+                    shift
+                    ;;
+                --force)
+                    force="true"
+                    shift
+                    ;;
+                -*)
+                    echo "❌ Error: Unknown option $1"
+                    exit 1
+                    ;;
+                *)
+                    if [ -z "$repo_name" ]; then
+                        repo_name="$1"
+                    else
+                        echo "❌ Error: Multiple repository names provided: $repo_name, $1"
                         exit 1
-                        ;;
-                esac
-                ;;
-            --hard)
-                remove_repo "$3" "hard" "false"
-                ;;
-            *)
-                remove_repo "$2" "hard" "false"
-                ;;
-        esac
+                    fi
+                    shift
+                    ;;
+            esac
+        done
+
+        if [ -z "$repo_name" ]; then
+            echo "❌ Error: Repository name not provided"
+            exit 1
+        fi
+
+        if [ "$force" = "true" ] && [ "$mode" != "hard" ]; then
+            echo "❌ Error: --force must be used with --hard"
+            exit 1
+        fi
+
+        remove_repo "$repo_name" "$mode" "$force"
         ;;
     add)
-        add_skill "$2" "$3" "${4:-}"
+        add_skill_or_repo "$2" "${3:-.}" "${4:-}" "${5:-}"
         ;;
     remove)
-        remove_skill "$2"
+        remove_skill_or_repo "$2" "${3:-}"
         ;;
     list)
         list_skills
