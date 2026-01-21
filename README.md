@@ -16,15 +16,22 @@ This approach offers several unique technical advantages:
 
 ## Installation
 
+### Local (Per Project)
 ```bash
-# Clone this repository
-git clone https://github.com/your-org/converge-skills
-cd converge-skills
-
-# Make the tool executable
+cp ../converge-skills/skillsync .
 chmod +x skillsync
+```
 
-# Optional: Install git hooks for auto-restoration
+### Global (Recommended)
+This installs the tool to `~/.local/bin/skillsync` for use in any project:
+```bash
+# From inside the converge-skills repository:
+./skillsync install
+```
+
+### Post-Clone Setup
+If your project already uses SkillSync, remember to install the git hooks for auto-restoration:
+```bash
 chmod +x .git/hooks/post-*
 ```
 

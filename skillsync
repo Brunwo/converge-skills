@@ -6,8 +6,18 @@ SKILLS_REPOS="skills-repos"
 SKILLS_USER="skills-user"
 CONFIG=".skillsync/active-skills.json"
 
-# Initialize config directory
-mkdir -p .skillsync
+# Config directory
+mkdir_config() {
+    mkdir -p .skillsync
+}
+
+# Ensure we are in a Git repository (except for 'install' and 'help')
+check_git_repo() {
+    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        echo "❌ Error: Not a git repository. SkillSync commands must be run from the root of a project."
+        exit 1
+    fi
+}
 
 # Derive user-repo name from git URL
 get_repo_name() {
@@ -254,7 +264,6 @@ add_skill() {
     if [ "$source" != "user" ]; then
         cd "$SKILLS_REPOS/$source"
 
-        # Check repository structure and add appropriate pattern
         if [ -d "skills/$skill_path" ]; then
             # Repository has skills/ subdirectory (like Vercel)
             git sparse-checkout add --skip-checks "skills/$skill_path/*" >/dev/null 2>&1
@@ -458,6 +467,8 @@ remove_repo() {
 # Main command dispatcher
 case "${1:-}" in
     add-repo)
+        check_git_repo
+        mkdir_config
         # Handle variable number of arguments for add-repo
         arg2="${2:-}"
         arg3="${3:-}"
@@ -466,6 +477,7 @@ case "${1:-}" in
         add_sparse_submodule "$arg2" "$arg3" "$arg4" "$arg5"
         ;;
     remove-repo)
+        check_git_repo
         shift
         repo_name=""
         mode="hard"
@@ -514,16 +526,34 @@ case "${1:-}" in
         remove_repo "$repo_name" "$mode" "$force"
         ;;
     add)
+        check_git_repo
+        mkdir_config
         add_skill_or_repo "$2" "${3:-.}" "${4:-}" "${5:-}"
         ;;
     remove)
+        check_git_repo
         remove_skill_or_repo "$2" "${3:-}"
         ;;
     list)
+        check_git_repo
         list_skills
         ;;
     restore)
+        check_git_repo
         restore
+        ;;
+    install)
+        # Use ~/.local/bin for user-local installation
+        target_dir="${HOME}/.local/bin"
+        target="${target_dir}/skillsync"
+        mkdir -p "$target_dir"
+        cp "$0" "$target"
+        chmod +x "$target"
+        echo "✅ SkillSync installed to $target"
+        if [[ ":$PATH:" != *":$target_dir:"* ]]; then
+            echo "⚠ Warning: $target_dir is not in your PATH."
+            echo "   Add 'export PATH=\"\$HOME/.local/bin:\$PATH\"' to your ~/.bashrc or ~/.zshrc."
+        fi
         ;;
     *)
         cat << 'EOF'
@@ -536,6 +566,7 @@ Commands:
   remove <id>                              Deactivate skill
   list                                     List active skills
   restore                                  Restore symlinks from config
+  install                                  Install SkillSync globally to ~/.local/bin
 
 Examples:
   # Default: auto-extract repo name and add ALL skills from repository
