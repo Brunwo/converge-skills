@@ -6,6 +6,14 @@ A bash-based tool for managing modular skills in software projects using git sub
 
 Converge Skills allows you to selectively inject skills (reusable components) from multiple repositories into your project, maintaining the ability to contribute changes upstream while keeping a clean, version-controlled skill tree.
 
+## Why SkillSync?
+
+This approach offers several unique technical advantages:
+- **Full Git Traceability**: Every skill is linked to its original source repository. This preserves the full history and allows you to commit changes directly back to the upstream source.
+- **Interactive Workflow**: Unlike passive "download and copy" approaches, SkillSync uses native Git submodules. You can **propose Pull Requests**, track your own local modifications, and **pull for upstream updates** directly from the skill's source repository.
+- **Partial/Sparse Loading**: Using `git sparse-checkout`, the tool materializes only the specific skill files you need. This keeps your project lightweight even when referencing massive multi-skill repositories.
+- **Unified Skill Tree**: Combines remote skills (reusable), community skills (shared), and local user skills (private) into a single, clean directory structure.
+
 ## Installation
 
 ```bash
@@ -20,44 +28,53 @@ chmod +x skillsync
 chmod +x .git/hooks/post-*
 ```
 
-## Quick Start
+## Quick Start (Automatic)
+
+The easiest way to get started is using a GitHub URL:
 
 ```bash
-# Setup new project
-mkdir my-agent-project
-cd my-agent-project
+# Initialize a new project
+mkdir my-agent-project && cd my-agent-project
 git init
 
-# Copy the skillsync tool
+# Copy skillsync to your root
 cp ../converge-skills/skillsync .
-chmod +x skillsync
 
-# Add skill repositories as sparse submodules
-./skillsync add-repo \
-    https://github.com/base-org/agent-skills \
-    base \
-    "skills/postgres-patterns/* skills/saas-multitenancy/*"
+# Add a repo via URL - it auto-detects skills and activates them!
+./skillsync add https://github.com/vercel-labs/agent-skills
 
+# Add the Anthropic skills repo
+./skillsync add https://github.com/anthropics/skills
+
+# Your skills are ready in skills/
+ls -la skills/
+# ✓ Activated: claude.ai -> ...
+# ✓ Activated: react-best-practices -> ...
+# ✓ Activated: frontend-design -> ...
+```
+
+## Manual Control
+
+For more direct control over naming and paths:
+
+```bash
+# Add repo with custom name and specific paths
 ./skillsync add-repo \
-    https://github.com/community/agent-skills \
-    community \
-    "skills/auth-flows/*"
+    https://github.com/anthropics/skills \
+    anthropics \
+    "skills/frontend-design/* skills/algorithmic-art/*"
 
 # Activate specific skills
-./skillsync add base postgres-patterns
-./skillsync add base saas-multitenancy
-./skillsync add community auth-flows
+./skillsync add anthropics frontend-design
+./skillsync add vercel react-best-practices
 
-# Add user-specific skill
+# Add your private skills
 mkdir -p skills-user/custom-stripe
-echo "# Custom Stripe Skill" > skills-user/custom-stripe/SKILL.md
+echo "# Custom Stripe" > skills-user/custom-stripe/SKILL.md
 ./skillsync add user custom-stripe
 
 # List active skills
 ./skillsync list
-
-# Your agent loads from skills-active/
-ls -la skills-active/
 ```
 
 ## Directory Structure
@@ -66,25 +83,23 @@ After setup, your project will look like:
 
 ```
 my-agent-project/
-├── .gitmodules                    # submodule config
-├── skills-repos/                  # sparse submodules (pruned)
-│   ├── base/                      # submodule, sparse checkout
+├── .gitmodules                    # Submodule config
+├── skills-repos/                  # Sparse submodules (pruned)
+│   ├── anthropics/                # ONLY materializes used skills
 │   │   └── skills/
-│   │       ├── saas-multitenancy/
-│   │       └── postgres-patterns/
-│   └── community/                 # submodule, sparse checkout
+│   │       └── frontend-design/   # <--- Materialized via sparse-checkout
+│   └── vercel-labs/
 │       └── skills/
-│           └── auth-flows/
-├── skills-user/                   # your custom skills
-│   └── custom-stripe/
-├── skills-active/                 # working directory with symlinks
-│   ├── saas-multitenancy -> ../skills-repos/base/skills/saas-multitenancy/
-│   ├── postgres-patterns -> ../skills-repos/base/skills/postgres-patterns/
-│   ├── auth-flows -> ../community/skills/auth-flows/
-│   └── custom-stripe -> ../skills-user/custom-stripe/
+│           └── react-best-practices/
+├── skills-user/                   # Your private/custom skills
+│   └── my-local-skill/
+├── skills/                        # Unified skill tree (symlinks)
+│   ├── frontend-design -> ../skills-repos/anthropics/skills/frontend-design/
+│   ├── react-best-practices -> ../skills-repos/vercel-labs/skills/react-best-practices/
+│   └── my-local-skill -> ../skills-user/my-local-skill/
 ├── .skillsync/
-│   └── active-skills.json         # tracks which skills are active
-└── skillsync                      # the management tool
+│   └── active-skills.json         # Tracks which skills are active
+└── skillsync                      # The management tool
 ```
 
 ## Commands
@@ -94,11 +109,11 @@ my-agent-project/
 Add a skill repository as a sparse submodule from a specific branch.
 
 ```bash
-# Add from default branch
-./skillsync add-repo https://github.com/base-org/skills base "skills/postgres-patterns/*"
+# Add from default branch (Anthropic)
+./skillsync add-repo https://github.com/anthropics/skills anthropic "skills/frontend-design/*"
 
-# Add from specific branch
-./skillsync add-repo https://github.com/vercel-labs/agent-skills vercel "skills/react-best-practices/" install
+# Add from specific branch (Vercel)
+./skillsync add-repo https://github.com/vercel-labs/agent-skills vercel "skills/react-best-practices/" main
 
 # Add entire skills directory
 ./skillsync add-repo https://github.com/community/agent-skills community "skills/"
@@ -117,7 +132,7 @@ Remove an entire repository and all its associated skills.
 Activate a skill from a repository or user directory.
 
 ```bash
-./skillsync add base saas-multitenancy
+./skillsync add anthropic frontend-design
 ./skillsync add vercel react-best-practices
 ./skillsync add user custom-stripe my-stripe-skill
 ```
@@ -152,7 +167,7 @@ The sparse checkout approach allows you to contribute changes back to upstream r
 
 ```bash
 # Make changes to a skill
-cd skills-active/saas-multitenancy
+cd skills/saas-multitenancy
 nano SKILL.md
 
 # Commit from the submodule
@@ -177,9 +192,7 @@ git submodule update --init --recursive
 ./skillsync restore
 ```
 
-## Git Hooks
-
-The included git hooks automatically restore symlinks after checkout or merge operations, ensuring your `skills-active/` directory stays in sync.
+The included git hooks automatically restore symlinks after checkout or merge operations, ensuring your `skills/` directory stays in sync.
 
 ## Dependencies
 
