@@ -209,6 +209,17 @@ The included git hooks automatically restore symlinks after checkout or merge op
 
 ## Benefits
 
+## ADR: sync status and version pinning
+
+The `skillsync` tool now includes three new features:
+
+1. **`status` command** – Reports each submodule’s upstream commit, how many commits it is behind/ahead, any local modifications, and broken symlinks in `skills/`.
+2. **`sync` command** – Fast‑forwards upstream changes for all or a specific submodule, with `--dry-run` support, stashing local changes when needed.
+3. **Version pinning** – `add_skill` records the submodule’s current commit hash in `active-skills.json` for auditability; user‑sourced skills omit this field.
+
+These additions make submodule drift detectable, simplify pulling upstream updates, and improve reproducibility by tracking the exact commit each skill was activated at.
+
+
 - **Maximum storage efficiency**: Downloads only specific skills, not entire repositories
 - **Branch support**: Track skills from any git branch (main, develop, install, etc.)
 - **Upstream contribution**: Full git workflow for contributing back
